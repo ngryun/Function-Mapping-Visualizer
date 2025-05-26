@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import re
 from matplotlib.patches import FancyArrowPatch
+import config
 
 
 def get_y_values(elements, a):
@@ -39,7 +40,7 @@ def draw_arrow(ax, domain_elements, codomain_elements, relation, x_offset_domain
 
 def draw_elements(ax, elements, y_values, x_offset=0):
     for i, element in enumerate(elements):
-        ax.text(x_offset, y_values[i], r'${}$'.format(element), ha='center', va='center', fontsize=27)
+        ax.text(x_offset, y_values[i], r'${}$'.format(element), ha='center', va='center', fontsize=config.current_fontsize)
 def draw_ellipse(domain_elements, codomain_elements):
     max_elements = max(len(domain_elements), len(codomain_elements))
     a = (max_elements+1)/2
@@ -80,4 +81,4 @@ def draw_ellipse(domain_elements, codomain_elements):
     ax.axis('equal')
     # Adjust the layout
     fig.tight_layout()
-    return fig
+    return fig, a, b

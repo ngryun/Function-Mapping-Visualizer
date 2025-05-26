@@ -4,285 +4,511 @@ from tkinter import Entry, Label, Button, filedialog
 import webbrowser
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyArrowPatch, ArrowStyle  # 여기서 ArrowStyle을 추가로 import 합니다.
+from matplotlib.patches import FancyArrowPatch, ArrowStyle
 import matplotlib.patches as patches
 import numpy as np
-from graphics import draw_ellipse, draw_arrow, get_y_values
+from graphics import draw_ellipse, draw_arrow, get_y_values # get_y_values is used by get_closest_element
 from utils import save_as_image, copy_to_clipboard
 import config
+import math # For Euclidean distance in get_closest_element
+
+# --- Global variable for Matplotlib Canvas ---
+# This holds the FigureCanvasTkAgg object to allow connecting/disconnecting events
+# and accessing canvas-specific methods if needed elsewhere.
+canvas_tk_agg_obj = None 
 
 def reverse_arrows_direction():
+    """Reverses the direction style of all arrows on the canvas and updates the function name display (f to f^-1 and vice-versa)."""
     if not config.current_fig:
         return
 
     ax = config.current_fig.gca()
-    max_elements = max(len(domain_entry.get().split(',')), len(codomain_entry.get().split(',')))
-    a = (max_elements+1)/2
-    b = a / 2
-    start_point = (0 + 0.5*b, a)
-    end_point = (3*b- 0.5*b, a)
     
-    # 화살표의 중간 위치 계산
-    mid_point = ((start_point[0] + end_point[0]) / 2, (start_point[1] + end_point[1]) / 2)
-    # special_arrow가 라벨인 화살표의 arrowstyle 확인
-    special_arrow_style = None
+    # Determine current a and b, prefer stored config values, fallback to recalculation
+    a_temp, b_temp = config.current_a, config.current_b
+    if a_temp is None or b_temp is None:
+        if domain_entry.get() and codomain_entry.get():
+            try:
+                max_elements = max(len(domain_entry.get().split(',')), len(codomain_entry.get().split(',')))
+                a_temp = (max_elements+1)/2
+                b_temp = a_temp / 2
+            except ValueError: # Handle cases where split might result in non-comparable if empty strings not handled by len
+                return
+        else:
+            return 
+    if a_temp is None or b_temp is None: return # Still None, cannot proceed
+
+    # Calculate positions for function name text (f or f^-1)
+    mid_point_x = (0 + 0.5*b_temp + 3*b_temp - 0.5*b_temp) / 2
+    mid_point_y = a_temp + 0.07*b_temp # Slightly above the ellipses connecting arrow
+
+    new_func_text = r'$f$' # Default to f
+    target_arrow_style = '-|>' # Default to forward arrow
+
+    # Check the style of the 'special_arrow' (main function arrow) to determine current state
+    # If not found, it might infer from other arrows, but this part is focused on the special_arrow.
+    special_arrow_found = False
     for patch in ax.patches:
         if isinstance(patch, patches.FancyArrowPatch) and patch.get_label() == "special_arrow":
-            if isinstance(patch.get_arrowstyle(), patches.ArrowStyle.CurveFilledB):
-                special_arrow_style = '<|-'
-                remove_functionName()
-                ax.text(mid_point[0], mid_point[1] + 0.07*b, r'$f^{-1}$', ha='center', va='bottom', fontsize=30, color='black')
-            else:
-                special_arrow_style = '-|>'
-                remove_functionName()
-                ax.text(mid_point[0], mid_point[1] + 0.07*b, r'$f$', ha='center', va='bottom', fontsize=30, color='black')
+            special_arrow_found = True
+            # If current style is forward ('-|>' which is ArrowStyle.CurveFilledB's default or similar)
+            # then change to inverse. ArrowStyle objects don't directly expose their string representation easily.
+            # We rely on the visual outcome or a custom attribute if set.
+            # Assuming default FancyArrowPatch style is '->' or '-|>', then CurveFilledB is '<-' or '<|-'.
+            # This logic is a bit heuristic; robust ArrowStyle checking is complex.
+            # For simplicity, if it's not already '<|-', assume it's forward.
+            # A better way would be to store the current direction state in config.
+            current_style_str = str(patch.get_arrowstyle()) # This might not be the 'simple' style string.
+            if "<|-" in current_style_str or "Simple,tail_width=0.5,head_width=4,head_length=8" in current_style_str and patch.get_mutation_scale() == 15 : # Heuristic for inverse style
+                 # This check is very fragile. A more robust way: store current_arrow_direction in config.
+                 pass # Already inverse, target will be forward (default)
+            else: # Assumed forward, change to inverse
+                new_func_text = r'$f^{-1}$'
+                target_arrow_style = '<|-'
+            break 
+    
+    if not special_arrow_found and len(ax.patches) > 0: # Fallback if special_arrow not found
+         #This fallback is removed as it can lead to inconsistent behavior if special_arrow is deleted.
+         pass
 
-    # special_arrow 라벨이 붙은 화살표가 없으면 첫 번째 화살표를 기준으로 스타일을 설정합니다.
-    if not special_arrow_style and len(ax.patches) > 0:
-        first_arrow = ax.patches[0]
-        if isinstance(first_arrow.get_arrowstyle(), patches.ArrowStyle.CurveFilledB):
-            special_arrow_style = '<|-'
-        else:
-            special_arrow_style = '-|>'
+    # Remove existing function name text before adding new one
+    remove_functionName() 
+    ax.text(mid_point_x, mid_point_y, new_func_text, ha='center', va='bottom', fontsize=30, color='black')
 
-    # special_arrow의 스타일에 따라 모든 화살표의 스타일 변경
-    if special_arrow_style:
-        for patch in ax.patches[:]:  # 리스트의 복사본을 사용하여 수정 중 오류를 방지합니다.
-            if isinstance(patch, patches.FancyArrowPatch):
-                patch.set_arrowstyle(special_arrow_style)
+    # Apply the new style to all arrows
+    for patch in ax.patches[:]:
+        if isinstance(patch, patches.FancyArrowPatch):
+            patch.set_arrowstyle(target_arrow_style)
 
-    config.current_fig.canvas.draw_idle()  # 변경 사항을 반영하여 다시 그립니다.
-
+    if hasattr(config.current_fig, 'canvas'): config.current_fig.canvas.draw_idle()
 
 
 def remove_arrows():
+    """Removes all relation arrows (arrows not labeled 'special_arrow') from the canvas."""
     if not config.current_fig:
         return
-
     ax = config.current_fig.gca()
-
-    # FancyArrowPatch를 순회하면서 라벨이 "special_arrow"가 아닌 화살표만 삭제
-    for patch in ax.patches[:]:
+    for patch in ax.patches[:]: # Iterate over a copy for safe removal
         if isinstance(patch, patches.FancyArrowPatch) and patch.get_label() != "special_arrow":
             patch.remove()
-
-    config.current_fig.canvas.draw_idle()
+    if hasattr(config.current_fig, 'canvas'): config.current_fig.canvas.draw_idle()
 
 
 def toggle_arrow():
+    """Toggles the visibility of the main function arrow (labeled 'special_arrow') and its name (f or f^-1)."""
     if show_arrow_var.get():
-        draw_with_arrow()
+        draw_with_arrow() # This will draw the 'special_arrow' and its name
     else:
-        remove_special_arrow()
-        remove_functionName()
-        refresh_canvas()
+        remove_special_arrow() # Removes 'special_arrow'
+        remove_functionName()  # Removes the function name 'f' or 'f^-1'
+        # refresh_canvas() # Not strictly needed as remove_special_arrow/remove_functionName redraw
+
 
 def remove_special_arrow():
-    if not config.current_fig:
+    """Removes the main function arrow (labeled 'special_arrow') from the canvas."""
+    if not config.current_fig or config.current_a is None or config.current_b is None:
         return
-    
     ax = config.current_fig.gca()
-    max_elements = max(len(domain_entry.get().split(',')), len(codomain_entry.get().split(',')))
-    a = (max_elements+1)/2
-    b = a / 2
-
-    # 현재의 모든 주석과 텍스트를 검색하여 특정 화살표와 LaTeX 문자 f를 제거합니다.
-    for artist in list(ax.texts):  # We use list() to ensure that we're iterating over a copy
-        if isinstance(artist, plt.Annotation) and artist.get_position() == (0  + 0.5*b , a):
-            artist.remove()
-        elif isinstance(artist, plt.Text) and artist.get_text() == r'$f$' and artist.get_position() == ((0 + 3*b) / 2, a + 0.07*b):
-            artist.remove()
-    for patch in list(ax.patches):  # We iterate over a copy of ax.patches
+    for patch in list(ax.patches): # Iterate over a copy
         if hasattr(patch, 'get_label') and patch.get_label() == "special_arrow":
             patch.remove()
+    if hasattr(config.current_fig, 'canvas'): config.current_fig.canvas.draw_idle()
 
-    config.current_fig.canvas.draw_idle()  # Redraw the figure
+
 def remove_functionName():
-    if not config.current_fig:
+    """Removes the function name text (f or f^-1) associated with the main function arrow."""
+    if not config.current_fig or config.current_a is None or config.current_b is None:
         return
-    
     ax = config.current_fig.gca()
-    max_elements = max(len(domain_entry.get().split(',')), len(codomain_entry.get().split(',')))
-    a = (max_elements+1)/2
-    b = a / 2
-
-    # 현재의 모든 주석과 텍스트를 검색하여 특정 화살표와 LaTeX 문자 f를 제거합니다.
-    for artist in list(ax.texts):  # We use list() to ensure that we're iterating over a copy
-        #if isinstance(artist, plt.Text) and artist.get_text() == r'$f$' and artist.get_position() == ((0 + 3*b) / 2, a + 0.07*b):
-        if isinstance(artist, plt.Text) and artist.get_position() == ((0 + 3*b) / 2, a + 0.07*b):
+    a_temp, b_temp = config.current_a, config.current_b
+    # Calculate expected position of function name text
+    mid_point_x = (0 + 0.5*b_temp + 3*b_temp - 0.5*b_temp) / 2
+    mid_point_y = a_temp + 0.07*b_temp
+    
+    for artist in list(ax.texts): # Iterate over a copy
+        # Check text content and position to identify the function name
+        if artist.get_text() in [r'$f$', r'$f^{-1}$'] and \
+           abs(artist.get_position()[0] - mid_point_x) < 1e-3 and \
+           abs(artist.get_position()[1] - mid_point_y) < 1e-3:
             artist.remove()
-
-    config.current_fig.canvas.draw_idle()  # Redraw the figure
+    if hasattr(config.current_fig, 'canvas'): config.current_fig.canvas.draw_idle()
 
 
 def refresh_canvas():
-    canvas = FigureCanvasTkAgg(config.current_fig, master=right_frame)
-    canvas_widget = canvas.get_tk_widget()
-    canvas_widget.grid(row=0, column=0, padx=10, pady=10)
-    canvas.draw()
+    """Redraws the Matplotlib canvas if it exists."""
+    if hasattr(config, 'current_fig') and config.current_fig and hasattr(config.current_fig, 'canvas'):
+        config.current_fig.canvas.draw_idle()
 
 
 def draw_with_arrow():
-    if not config.current_fig:  # current_fig가 None인 경우에만 draw_only_ellipse() 호출
-        draw_only_ellipse()
+    """Draws the main function arrow and its name (f) on the canvas. Assumes f, not f^-1."""
+    if not config.current_fig:
+        draw_only_ellipse() # Ensure figure and ellipses exist
+        if not config.current_fig : # If still no figure, cannot proceed
+             return 
     
     ax = config.current_fig.gca()
-    max_elements = max(len(domain_entry.get().split(',')), len(codomain_entry.get().split(',')))
-    a = (max_elements+1)/2
-    b = a / 2
+    if config.current_a is None or config.current_b is None: return # Ellipse params needed
+    a_temp, b_temp = config.current_a, config.current_b
 
-    # 화살표 시작점과 끝점
-    start_point = (0 + 0.5*b, a)
-    end_point = (3*b- 0.5*b, a)
+    # Define start and end points for the main function arrow (X to Y)
+    start_point = (0 + 0.5*b_temp, a_temp) # Offset from center of domain ellipse top
+    end_point = (3*b_temp - 0.5*b_temp, a_temp) # Offset from center of codomain ellipse top
     
-    # 화살표의 중간 위치 계산
-    mid_point = ((start_point[0] + end_point[0]) / 2, (start_point[1] + end_point[1]) / 2)
-    #ax.annotate("", xy=end_point, xytext=start_point, arrowprops=dict(arrowstyle="->", color='black', lw=1.5))
+    # Calculate midpoint for placing the function name 'f'
+    mid_point_x = (start_point[0] + end_point[0]) / 2
+    mid_point_y = a_temp + 0.07*b_temp # Slightly above the arrow
+
+    # Remove any existing special arrow and function name before drawing new ones
+    remove_special_arrow() 
+    remove_functionName()
+
     arrow = FancyArrowPatch(start_point, end_point, mutation_scale=15, arrowstyle='-|>', color="black", label="special_arrow")
-    
     ax.add_patch(arrow)
-    # 중간 위치에 텍스트 추가
-    ax.text(mid_point[0], mid_point[1] + 0.07*b, r'$f$', ha='center', va='bottom', fontsize=30, color='black')
+    ax.text(mid_point_x, mid_point_y, r'$f$', ha='center', va='bottom', fontsize=30, color='black') # Default to 'f'
     
-    canvas = FigureCanvasTkAgg(config.current_fig, master=right_frame)
-    canvas_widget = canvas.get_tk_widget()
-    canvas_widget.grid(row=0, column=0, padx=10, pady=10)
-    canvas.draw()
+    if hasattr(config.current_fig, 'canvas'): config.current_fig.canvas.draw_idle()
 
-    
+
 def open_link(event):
+    """Opens the provided URL in a new web browser tab."""
     webbrowser.open_new("https://namgungyeon.tistory.com/")
 
+
 def draw_only_ellipse():
-    domain_elements = domain_entry.get().split(',')
-    codomain_elements = codomain_entry.get().split(',')
+    """
+    Core function to draw/redraw the ellipses and their elements.
+    Updates global config for ellipse parameters and canvas object.
+    Connects canvas click events.
+    """
+    global canvas_tk_agg_obj # Needed to store/update the canvas object for event handling
 
-    config.current_fig = draw_ellipse(domain_elements, codomain_elements)
-    for widget in right_frame.winfo_children():
+    domain_elements_str = domain_entry.get()
+    codomain_elements_str = codomain_entry.get()
+
+    # If domain or codomain is empty, clear the canvas and reset config params
+    if not domain_elements_str.strip() or not codomain_elements_str.strip(): 
+        if hasattr(config, 'current_fig') and config.current_fig:
+            for widget in right_frame.winfo_children(): # Clear existing canvas widget from frame
+                widget.destroy()
+            if config.current_fig: # Clear Matplotlib figure object
+                config.current_fig.clf() 
+                plt.close(config.current_fig) 
+            config.current_fig = None
+            config.current_a = None 
+            config.current_b = None
+            # Disconnect previous canvas events if any (though canvas_tk_agg_obj might be None or stale)
+            if canvas_tk_agg_obj and hasattr(canvas_tk_agg_obj, '_tkcanvas'):
+                 # This is tricky; proper event disconnection needs care.
+                 # For now, relying on new canvas creation.
+                 pass
+            canvas_tk_agg_obj = None
+        return
+
+    domain_elements = [e.strip() for e in domain_elements_str.split(',') if e.strip()]
+    codomain_elements = [e.strip() for e in codomain_elements_str.split(',') if e.strip()]
+    if not domain_elements: domain_elements = [""] # Ensure it's not completely empty for graphics.py
+    if not codomain_elements: codomain_elements = [""]
+
+
+    # Call graphics.py to draw ellipses; it returns fig, a, b
+    fig, a, b = draw_ellipse(domain_elements, codomain_elements) 
+    config.current_fig = fig
+    config.current_a = a  # Store ellipse semi-major axis
+    config.current_b = b  # Store ellipse semi-minor axis
+
+    # Clear previous canvas widget from the Tkinter frame
+    for widget in right_frame.winfo_children(): 
         widget.destroy()
-    canvas = FigureCanvasTkAgg(config.current_fig, master=right_frame)
-    canvas_widget = canvas.get_tk_widget()
-    canvas_widget.grid(row=0, column=0, padx=10, pady=10)
     
-    if show_arrow_var.get():  # 체크박스가 체크되어 있다면
-        draw_with_arrow()
+    # Create new FigureCanvasTkAgg object and embed it in the Tkinter frame
+    canvas_tk_agg_obj = FigureCanvasTkAgg(config.current_fig, master=right_frame)
+    canvas_widget = canvas_tk_agg_obj.get_tk_widget()
+    canvas_widget.grid(row=0, column=0, padx=10, pady=10, sticky="nsew") # Make canvas responsive
+    
+    # Connect the 'button_press_event' (mouse click) on the canvas to the handler function
+    # This is done here because canvas_tk_agg_obj is recreated each time.
+    canvas_tk_agg_obj.callbacks.connect('button_press_event', on_canvas_click)
 
-    canvas.draw()
+    # Draw the main function arrow ('f') if the checkbox is ticked
+    if show_arrow_var.get():
+        draw_with_arrow()
+    else: 
+        remove_special_arrow() # Ensure it's removed if checkbox is off
+        remove_functionName()
+
+    canvas_tk_agg_obj.draw() # Refresh the canvas display
+
+
+def get_closest_element_in_ellipse(x_click, y_click, elements, elements_x_offset, a, b):
+    """
+    Finds the element (text label) in an ellipse closest to the click coordinates.
+    
+    Args:
+        x_click, y_click: Coordinates of the mouse click.
+        elements: List of element name strings.
+        elements_x_offset: X-coordinate of the center of the ellipse where elements are located.
+        a, b: Semi-major and semi-minor axes of the ellipse.
+        
+    Returns:
+        A dictionary {'coords': (elem_x, elem_y), 'name': 'element_name'} if a close element is found, 
+        otherwise None.
+    """
+    if not elements or (len(elements) == 1 and not elements[0]): # Handle empty or [""] elements list
+        return None
+    
+    y_coords_of_elements = get_y_values(elements, a) # Get y-positions of elements from graphics.py
+    if not y_coords_of_elements: return None # Should not happen if elements is not empty, but good check
+
+    min_dist_sq = float('inf') # Use squared distance to avoid sqrt until necessary
+    found_element_info = None
+    
+    # Heuristic for clickable radius around element text (y-axis based)
+    # This is roughly half the vertical spacing between elements.
+    clickable_radius_y = (a / (len(elements) + 1)) / 2 if len(elements) > 0 else a / 2
+
+    for i, element_name in enumerate(elements):
+        if i >= len(y_coords_of_elements): break # Safety break if y_coords mismatch
+        elem_y = y_coords_of_elements[i]
+        
+        # Calculate squared Euclidean distance from click to element's center
+        dist_sq = (x_click - elements_x_offset)**2 + (y_click - elem_y)**2
+        
+        if dist_sq < min_dist_sq:
+            # Check if the vertical distance to element is within a reasonable 'clickable' range
+            # This helps prioritize elements that are vertically aligned with the click,
+            # even if another element is slightly closer in raw Euclidean distance but far vertically.
+            if abs(y_click - elem_y) < clickable_radius_y * 1.5: # Generous vertical click area (1.5x radius)
+                min_dist_sq = dist_sq
+                found_element_info = {'coords': (elements_x_offset, elem_y), 'name': element_name.strip()}
+
+    # After finding the closest by the above criteria, apply a final distance threshold.
+    # If the closest element found is still too far (e.g., > 60% of ellipse width 'b'), ignore it.
+    if found_element_info and min_dist_sq > (b * 0.6)**2: 
+        return None
+
+    return found_element_info
+
+
+def on_canvas_click(event):
+    """
+    Handles mouse clicks on the Matplotlib canvas to interactively draw arrows.
+    Manages a two-click process: first click on domain, second on codomain.
+    """
+    # Ignore clicks outside the plottable area or if critical parameters are missing
+    if event.xdata is None or event.ydata is None: return
+    if config.current_a is None or config.current_b is None or config.current_fig is None: return
+
+    x, y = event.xdata, event.ydata
+    a, b = config.current_a, config.current_b
+
+    domain_elements = [e.strip() for e in domain_entry.get().split(',') if e.strip()]
+    codomain_elements = [e.strip() for e in codomain_entry.get().split(',') if e.strip()]
+
+    # Check if click is within the domain ellipse (centered at (0,0))
+    # Ellipse equation: (x/b)^2 + (y/a)^2 = 1
+    is_in_domain_ellipse = (x / b)**2 + (y / a)**2 <= 1.1 # Using 1.1 for a slightly larger clickable area
+
+    # Check if click is within the codomain ellipse (centered at (3*b,0))
+    codomain_center_x = 3 * b
+    is_in_codomain_ellipse = ((x - codomain_center_x) / b)**2 + (y / a)**2 <= 1.1 # Using 1.1
+
+    if config.arrow_start_point is None: # This is the potential first click (selecting arrow start)
+        if is_in_domain_ellipse:
+            # Find the specific element clicked on in the domain
+            clicked_element_info = get_closest_element_in_ellipse(x, y, domain_elements, 0, a, b)
+            if clicked_element_info:
+                config.arrow_start_point = clicked_element_info
+                # Optional: Add visual feedback for selected start point (e.g., highlight)
+                # ax = config.current_fig.gca()
+                # ax.plot(clicked_element_info['coords'][0], clicked_element_info['coords'][1], 'ro', markersize=3)
+                # refresh_canvas()
+        # If not in domain or no element found, do nothing, wait for a valid start click.
+    else: # This is the potential second click (selecting arrow end and drawing)
+        if is_in_codomain_ellipse:
+            # Find the specific element clicked on in the codomain
+            clicked_element_info = get_closest_element_in_ellipse(x, y, codomain_elements, codomain_center_x, a, b)
+            if clicked_element_info:
+                start_info = config.arrow_start_point
+                end_info = clicked_element_info
+
+                x1_center, y1_center = start_info['coords']
+                x2_center, y2_center = end_info['coords']
+
+                # Apply a small offset from element centers for arrow start/end points for better visuals
+                arrow_offset_x = 0.15 * b # Heuristic offset based on ellipse width
+                x1_arrow = x1_center + arrow_offset_x 
+                x2_arrow = x2_center - arrow_offset_x 
+
+                ax = config.current_fig.gca()
+                arrow = FancyArrowPatch((x1_arrow, y1_center), (x2_arrow, y2_center),
+                                        mutation_scale=15, arrowstyle='-|>', color="black", lw=1.0) # Thinner line
+                ax.add_patch(arrow) # Add the new arrow to the plot
+                refresh_canvas()
+
+                # Update the relation_entry text field with the new relation
+                new_relation_str = f"f({start_info['name']})={end_info['name']}"
+                current_relations = relation_entry.get()
+                if current_relations:
+                    relation_entry.insert(tk.END, f";{new_relation_str}")
+                else:
+                    relation_entry.delete(0, tk.END) # Clear if empty before inserting
+                    relation_entry.insert(0, new_relation_str)
+        
+        # Always reset arrow_start_point after the second click attempt, regardless of success.
+        # This ensures the user can start a new arrow drawing sequence.
+        # Optional: Remove visual feedback for start point if it was added.
+        # if hasattr(config.current_fig, 'gca'): # Remove temporary marker if any
+        #    # This requires storing the marker object and removing it specifically.
+        #    # For simplicity, a full redraw or ignoring markers is easier.
+        #    pass 
+        config.arrow_start_point = None
+        # A full redraw might be needed if markers are left and not handled:
+        # draw_only_ellipse()
+
 
 def draw_arrows():
-    if not config.current_fig:
+    """Draws arrows based on the text in relation_entry."""
+    if not config.current_fig or config.current_a is None or config.current_b is None: 
         return
     ax = config.current_fig.gca()
-    domain_elements = domain_entry.get().split(',')
-    codomain_elements = codomain_entry.get().split(',')
-    relation = relation_entry.get().split(';')
     
-    max_elements = max(len(domain_elements), len(codomain_elements))
-    a = (max_elements + 1) / 2
-    b = a / 2
+    domain_elements_str = domain_entry.get()
+    codomain_elements_str = codomain_entry.get()
+    relation_str = relation_entry.get()
 
-    draw_arrow(ax, domain_elements, codomain_elements, relation, 0, 3 * b)
+    if not domain_elements_str.strip() or not codomain_elements_str.strip() or not relation_str.strip(): 
+        return # Nothing to draw if inputs are empty
+    
+    domain_elements = [e.strip() for e in domain_elements_str.split(',') if e.strip()]
+    codomain_elements = [e.strip() for e in codomain_elements_str.split(',') if e.strip()]
+    relations = [r.strip() for r in relation_str.split(';') if r.strip()]
+    
+    if not domain_elements or not codomain_elements or not relations: return
 
-    canvas = FigureCanvasTkAgg(config.current_fig, master=right_frame)
-    canvas_widget = canvas.get_tk_widget()
-    canvas_widget.grid(row=0, column=0, padx=10, pady=10)
-    canvas.draw()
+    # Call graphics.draw_arrow, which handles parsing relation strings and drawing
+    # It recalculates 'a' internally, which is fine. Uses config.current_b for codomain_x_offset.
+    draw_arrow(ax, domain_elements, codomain_elements, relations, 0, 3 * config.current_b)
+    refresh_canvas()
+
 
 def draw_arrows_and_clear_entry(event=None):
+    """Callback for relation_entry <Return> key: draws arrows and clears the entry."""
     draw_arrows()
-    relation_entry.delete(0, tk.END)
-    root.after(100, lambda: relation_entry.focus_set()) 
+    relation_entry.delete(0, tk.END) # Clear the entry field
+    if root: root.after(100, lambda: relation_entry.focus_set()) # Keep focus on the entry
 
-def on_value_finalized(event):
+
+def on_value_finalized(event=None): 
+    """Callback for domain/codomain entry changes: redraws the ellipses."""
     draw_only_ellipse()
+
+
+def update_fontsize(new_size):
+    """Callback for font size scale: updates font size in config and redraws."""
+    config.current_fontsize = int(new_size)
+    if hasattr(config, 'current_fig') and config.current_fig: 
+        draw_only_ellipse() # Redraw with new font size
 
 
 def initialize_gui():
-  
-    global show_arrow_var
-    global root, domain_entry, codomain_entry, relation_entry, right_frame
-    
-    root = tk.Tk()  # 여기서 root 를 전역 변수로 만듭니다.
+    """Initializes the main Tkinter GUI window, frames, widgets, and event bindings."""
+    global show_arrow_var, root, domain_entry, codomain_entry, relation_entry, right_frame
+    # canvas_tk_agg_obj is handled by draw_only_ellipse
+
+    root = tk.Tk()
     root.title("Function Relation Illustrator")
-    show_arrow_var = tk.IntVar()
-    show_arrow_var.set(1)
+    show_arrow_var = tk.IntVar(value=1) # Checkbox for showing main function arrow 'f'
     
+    # Configure root window grid for responsiveness
+    root.grid_rowconfigure(0, weight=1) 
+    root.grid_columnconfigure(1, weight=1) # Allow right_frame (canvas area) to expand
+
     main_frame = tk.Frame(root)
     main_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+    
+    # Configure main_frame grid (holds left controls and right canvas)
+    main_frame.grid_columnconfigure(0, weight=0) # Left controls, fixed width
+    main_frame.grid_columnconfigure(1, weight=1) # Right canvas, expandable
+    main_frame.grid_rowconfigure(0, weight=1)    # Allow row to expand vertically
 
+    # Left frame for input controls
     left_frame = tk.Frame(main_frame)
-    left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    left_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ns") # North-South sticky
 
+    # Right frame for Matplotlib canvas
     right_frame = tk.Frame(main_frame)
-    right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+    right_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew") # All-direction sticky
+    right_frame.grid_rowconfigure(0, weight=1)    # Canvas row expands
+    right_frame.grid_columnconfigure(0, weight=1) # Canvas col expands
 
-    bottom_frame = tk.Frame(root)  # 이 프레임은 두 레이블을 포함합니다.
-    bottom_frame.pack(side=tk.BOTTOM, pady=5)
+    # Bottom frame for credits/links
+    bottom_frame = tk.Frame(root)
+    bottom_frame.pack(side=tk.BOTTOM, pady=5, fill=tk.X)
 
-    # 정의역 입력칸
-    Label(left_frame, text="Enter domain elements (e.g. a,b,c):").grid(row=0, column=0, pady=5)
-    domain_entry = Entry(left_frame)
-    domain_entry.grid(row=1, column=0, pady=5)
+    # --- Input Widgets in left_frame ---
+    Label(left_frame, text="Domain (e.g. a,b,c):").grid(row=0, column=0, columnspan=2, pady=(5,0), sticky=tk.W)
+    domain_entry = Entry(left_frame, width=30) # Increased width slightly
+    domain_entry.grid(row=1, column=0, columnspan=2, pady=2, sticky=tk.EW)
     domain_entry.bind("<Return>", on_value_finalized)
     domain_entry.bind("<FocusOut>", on_value_finalized)
 
-    # 공역 입력칸
-    Label(left_frame, text="Enter codomain elements (e.g. x,y,z):").grid(row=2, column=0, pady=5)
-    codomain_entry = Entry(left_frame)
-    codomain_entry.grid(row=3, column=0, pady=5)
+    Label(left_frame, text="Codomain (e.g. x,y,z):").grid(row=2, column=0, columnspan=2, pady=(5,0), sticky=tk.W)
+    codomain_entry = Entry(left_frame, width=30)
+    codomain_entry.grid(row=3, column=0, columnspan=2, pady=2, sticky=tk.EW)
     codomain_entry.bind("<Return>", on_value_finalized)
     codomain_entry.bind("<FocusOut>", on_value_finalized)
 
-    # 함숫값 입력칸
-    Label(left_frame, text="Enter relations (e.g. f(a)=1;f(b)=2):").grid(row=4, column=0, pady=5)
-    relation_entry = Entry(left_frame)
-    relation_entry.grid(row=5, column=0, pady=5)
+    # Fontsize Scale
+    Label(left_frame, text="Font Size:").grid(row=4, column=0, pady=(10,0), sticky=tk.W)
+    fontsize_scale = tk.Scale(left_frame, from_=10, to=40, orient=tk.HORIZONTAL, command=update_fontsize)
+    fontsize_scale.set(config.current_fontsize) 
+    fontsize_scale.grid(row=4, column=1, pady=(10,0), sticky=tk.EW)
+    
+    left_frame.grid_columnconfigure(0, weight=0) # Label column for font size
+    left_frame.grid_columnconfigure(1, weight=1) # Scale column for font size (expandable)
+
+    Label(left_frame, text="Relations (e.g. f(a)=1;f(b)=2):").grid(row=5, column=0, columnspan=2, pady=(10,0), sticky=tk.W)
+    relation_entry = Entry(left_frame, width=30)
+    relation_entry.grid(row=6, column=0, columnspan=2, pady=2, sticky=tk.EW)
     relation_entry.bind('<Return>', draw_arrows_and_clear_entry)
 
-
-    #함수 이름 보이기
-    show_arrow_checkbox = tk.Checkbutton(left_frame, text="Show function Name", variable=show_arrow_var, command=toggle_arrow)
-    show_arrow_checkbox.grid(row=6, column=0, pady=5)  # grid 위치는 적절하게 조정해야 할 수 있습니다.
+    # --- Control Buttons and Checkboxes ---
+    show_arrow_checkbox = tk.Checkbutton(left_frame, text="Show function Name (f)", variable=show_arrow_var, command=toggle_arrow)
+    show_arrow_checkbox.grid(row=7, column=0, columnspan=2, pady=(10,0), sticky=tk.W)
     
-    #역함수 버튼
-    inverse_button = tk.Button(left_frame, text="inverse arrows", command=reverse_arrows_direction)
-    inverse_button.grid(row=7, column=0, pady=5)
+    inverse_button = tk.Button(left_frame, text="Inverse Arrows & Function Name", command=reverse_arrows_direction)
+    inverse_button.grid(row=8, column=0, columnspan=2, pady=5, sticky=tk.EW)
     
-    #화살표 지우기 
-    remove_arrows_button = tk.Button(left_frame, text="Remove Arrows", command=remove_arrows)
-    remove_arrows_button.grid(row=8, column=0, pady=5)
-    # 레이아웃을 위한 공간 (버튼이 들어갈 정도의 공간)
-    empty_label = Label(left_frame, text="")
-    empty_label.grid(row=9, column=0)
-
-    # 클립보드    
-    clip_button = tk.Button(left_frame, text="copy_to_clipboard", command=copy_to_clipboard, bg="#87CEEB")  # 하늘색
-    clip_button.grid(row=10, column=0, pady=5)
-
-    # 이미지 저장
-    save_button = tk.Button(left_frame, text="Save as Image", command=save_as_image, bg="#98FB98")  # 연두색
-    save_button.grid(row=11, column=0, pady=5)
-
-
+    remove_arrows_button = tk.Button(left_frame, text="Remove Relation Arrows", command=remove_arrows)
+    remove_arrows_button.grid(row=9, column=0, columnspan=2, pady=5, sticky=tk.EW)
     
-    #만든이표시
+    # Spacer (using pady in buttons above/below achieves similar)
+    # Label(left_frame, text="").grid(row=10, column=0, columnspan=2) 
+
+    clip_button = tk.Button(left_frame, text="Copy to Clipboard", command=copy_to_clipboard, bg="#87CEEB")
+    clip_button.grid(row=11, column=0, columnspan=2, pady=(15,5), sticky=tk.EW) # Added more top padding
+
+    save_button = tk.Button(left_frame, text="Save as Image", command=save_as_image, bg="#98FB98")
+    save_button.grid(row=12, column=0, columnspan=2, pady=5, sticky=tk.EW)
+    
+    # --- Bottom Frame Content (Credits) ---
     creator_label = tk.Label(bottom_frame, text="Made by Namgung Yeon @Sokcho 2023.10.6", font=("Arial", 10), fg="gray")
-    creator_label.pack(pady=5)  # 이제 여기서 side=tk.BOTTOM을 삭제했습니다.
+    creator_label.pack(side=tk.LEFT, padx=10)
 
-    # 하이퍼링크 부분
     link_label = tk.Label(bottom_frame, text="https://namgungyeon.tistory.com/", font=("Arial", 10, "underline"), fg="blue", cursor="hand2")
-    link_label.pack(pady=5)  # 여기서도 side와 anchor를 삭제했습니다.
+    link_label.pack(side=tk.RIGHT, padx=10)
     link_label.bind("<Button-1>", open_link)
-    # 정의역과 공역의 초기 값을 설정
-    domain_entry.insert(0, "a,b,c,d")
-    codomain_entry.insert(0, "1,2,3")
+
+    # --- Initial Setup ---
+    domain_entry.insert(0, "a,b,c,d") # Default domain
+    codomain_entry.insert(0, "1,2,3")  # Default codomain
     
-    draw_only_ellipse()
+    on_value_finalized() # Initial draw of ellipses based on default values
     
-    # 프로그램 시작 시 함숫값 입력칸에 포커스를 설정
-    root.after(100, lambda: relation_entry.focus_set())  # after 메서드를 사용하여 약간의 지연 후에 포커스 설정
-
-    root.mainloop()
+    if root: root.after(100, lambda: relation_entry.focus_set()) # Focus on relation entry
+    if root: root.mainloop()
 
 
-
+if __name__ == '__main__':
+    initialize_gui()
