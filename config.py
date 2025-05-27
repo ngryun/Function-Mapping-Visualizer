@@ -16,6 +16,9 @@ function_text_artist = None
 # Format: {'coords': (x, y), 'name': 'element_name_str'} or None if no arrow drawing is in progress.
 arrow_start_point = None
 
+# Visual feedback marker when selecting an element for arrow drawing
+selected_marker = None
+
 # --- Ellipse Parameters ---
 # These store the semi-major (a) and semi-minor (b) axes lengths of the currently displayed ellipses.
 # They are updated whenever the ellipses are redrawn (e.g., due to element changes or window resize).

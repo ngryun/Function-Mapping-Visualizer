@@ -20,6 +20,15 @@ canvas_tk_agg_obj = None
 show_arrow_checkbox = None
 relations_label_widget = None
 
+
+def _is_ascii(text):
+    """Return True if all characters in text are ASCII."""
+    try:
+        text.encode('ascii')
+    except UnicodeEncodeError:
+        return False
+    return True
+
 def reverse_arrows_direction():
     """Toggle all arrow directions and update the displayed function name."""
     if not config.current_fig:
@@ -37,11 +46,15 @@ def reverse_arrows_direction():
     mid_point_y = a_temp + 0.07*b_temp
 
     remove_functionName()
-    text = fr'${config.current_function_name}$'
-    style = '-|>'
-    if config.arrows_inverse:
-        text = fr'${config.current_function_name}^{{-1}}$'
-        style = '<|-'
+    if _is_ascii(config.current_function_name):
+        text = fr'${config.current_function_name}$'
+        if config.arrows_inverse:
+            text = fr'${config.current_function_name}^{{-1}}$'
+    else:
+        text = config.current_function_name
+        if config.arrows_inverse:
+            text += '^-1'
+    style = '<|-' if config.arrows_inverse else '-|>'
 
     config.function_text_artist = ax.text(mid_point_x, mid_point_y, text,
                                           ha='center', va='bottom', fontsize=30,
@@ -104,9 +117,14 @@ def change_function_name():
 
         # Update displayed function name text if present
         if config.function_text_artist:
-            txt = fr'${config.current_function_name}$'
-            if config.arrows_inverse:
-                txt = fr'${config.current_function_name}^{{-1}}$'
+            if _is_ascii(config.current_function_name):
+                txt = fr'${config.current_function_name}$'
+                if config.arrows_inverse:
+                    txt = fr'${config.current_function_name}^{{-1}}$'
+            else:
+                txt = config.current_function_name
+                if config.arrows_inverse:
+                    txt += '^-1'
             config.function_text_artist.set_text(txt)
             refresh_canvas()
 
@@ -164,9 +182,14 @@ def draw_with_arrow():
     arrow = FancyArrowPatch(start_point, end_point, mutation_scale=15,
                             arrowstyle=style, color="black", label="special_arrow")
     ax.add_patch(arrow)
-    text = fr'${config.current_function_name}$'
-    if config.arrows_inverse:
-        text = fr'${config.current_function_name}^{{-1}}$'
+    if _is_ascii(config.current_function_name):
+        text = fr'${config.current_function_name}$'
+        if config.arrows_inverse:
+            text = fr'${config.current_function_name}^{{-1}}$'
+    else:
+        text = config.current_function_name
+        if config.arrows_inverse:
+            text += '^-1'
     config.function_text_artist = ax.text(mid_point_x, mid_point_y, text,
                                           ha='center', va='bottom', fontsize=30,
                                           color='black')
@@ -207,6 +230,7 @@ def draw_only_ellipse():
                  # For now, relying on new canvas creation.
                  pass
             canvas_tk_agg_obj = None
+            config.selected_marker = None
         return
 
     domain_elements = [e.strip() for e in domain_elements_str.split(',') if e.strip()]
@@ -216,10 +240,11 @@ def draw_only_ellipse():
 
 
     # Call graphics.py to draw ellipses; it returns fig, a, b
-    fig, a, b = draw_ellipse(domain_elements, codomain_elements) 
+    fig, a, b = draw_ellipse(domain_elements, codomain_elements)
     config.current_fig = fig
     config.current_a = a  # Store ellipse semi-major axis
     config.current_b = b  # Store ellipse semi-minor axis
+    config.selected_marker = None
 
     # Clear previous canvas widget from the Tkinter frame
     for widget in right_frame.winfo_children(): 
@@ -325,10 +350,20 @@ def on_canvas_click(event):
             clicked_element_info = get_closest_element_in_ellipse(x, y, domain_elements, 0, a, b)
             if clicked_element_info:
                 config.arrow_start_point = clicked_element_info
-                # Optional: Add visual feedback for selected start point (e.g., highlight)
-                # ax = config.current_fig.gca()
-                # ax.plot(clicked_element_info['coords'][0], clicked_element_info['coords'][1], 'ro', markersize=3)
-                # refresh_canvas()
+                # Visual feedback for selected start point
+                ax = config.current_fig.gca()
+                if config.selected_marker:
+                    try:
+                        config.selected_marker.remove()
+                    except Exception:
+                        pass
+                config.selected_marker = ax.plot(
+                    clicked_element_info['coords'][0],
+                    clicked_element_info['coords'][1],
+                    marker='o', markersize=10, markerfacecolor='none',
+                    markeredgecolor='red', markeredgewidth=2
+                )[0]
+                refresh_canvas()
         # If not in domain or no element found, do nothing, wait for a valid start click.
     else: # This is the potential second click (selecting arrow end and drawing)
         if is_in_codomain_ellipse:
@@ -361,15 +396,15 @@ def on_canvas_click(event):
                     relation_entry.insert(tk.END, f";{new_relation_str}")
                 else:
                     relation_entry.delete(0, tk.END) # Clear if empty before inserting
-                    relation_entry.insert(0, new_relation_str)
-        
+                relation_entry.insert(0, new_relation_str)
         # Always reset arrow_start_point after the second click attempt, regardless of success.
-        # This ensures the user can start a new arrow drawing sequence.
-        # Optional: Remove visual feedback for start point if it was added.
-        # if hasattr(config.current_fig, 'gca'): # Remove temporary marker if any
-        #    # This requires storing the marker object and removing it specifically.
-        #    # For simplicity, a full redraw or ignoring markers is easier.
-        #    pass 
+        # Remove visual feedback marker if present.
+        if config.selected_marker:
+            try:
+                config.selected_marker.remove()
+            except Exception:
+                pass
+            config.selected_marker = None
         config.arrow_start_point = None
         # A full redraw might be needed if markers are left and not handled:
         # draw_only_ellipse()
