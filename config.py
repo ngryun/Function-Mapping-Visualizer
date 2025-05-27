@@ -1,6 +1,16 @@
 # Global variable to store the current font size for drawing elements
 current_fontsize = 27
 
+# Name of the function currently displayed (default 'f').
+current_function_name = 'f'
+
+# Whether arrows are currently shown in inverse direction.
+arrows_inverse = False
+
+# Matplotlib artist for the displayed function name text.  Allows easy update
+# or removal when toggling settings.
+function_text_artist = None
+
 # --- Interactive Arrow Drawing State ---
 # Stores information about the starting point of an arrow being drawn interactively.
 # Format: {'coords': (x, y), 'name': 'element_name_str'} or None if no arrow drawing is in progress.
