@@ -11,8 +11,11 @@ def get_y_values(elements, a):
     return y_all_values[1:-1]
 
 def draw_arrow(ax, domain_elements, codomain_elements, relation, x_offset_domain, x_offset_codomain):
-    pattern = re.compile(r'f\((.*?)\)=([\w]+)')  # 정규 표현식 패턴
-    #수정필요
+    """Draw relation arrows between elements."""
+    # Compile regex based on the currently selected function name
+    func_name = re.escape(config.current_function_name)
+    pattern = re.compile(fr'{func_name}\((.*?)\)=([\w]+)')
+
     max_elements = max(len(domain_elements), len(codomain_elements))
     a = (max_elements+1)/2
     
@@ -35,7 +38,9 @@ def draw_arrow(ax, domain_elements, codomain_elements, relation, x_offset_domain
                 x1 = x_offset_domain + 0.2 * (a / 2)
                 y1 = start_y
                 
-                arrow = FancyArrowPatch((x1, y1), (x2, y2), mutation_scale=15, arrowstyle='-|>', color="black")
+                style = '<|-' if config.arrows_inverse else '-|>'
+                arrow = FancyArrowPatch((x1, y1), (x2, y2), mutation_scale=15,
+                                        arrowstyle=style, color="black")
                 ax.add_patch(arrow)
             except ValueError:
                 pass  # If input relation doesn't match domain or codomain, we'll skip drawing the arrow for that relation

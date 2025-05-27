@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk 
-from tkinter import Entry, Label, Button, filedialog
+from tkinter import Entry, Label, Button, filedialog, simpledialog
 import webbrowser
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
@@ -15,72 +15,44 @@ import math # For Euclidean distance in get_closest_element
 # --- Global variable for Matplotlib Canvas ---
 # This holds the FigureCanvasTkAgg object to allow connecting/disconnecting events
 # and accessing canvas-specific methods if needed elsewhere.
-canvas_tk_agg_obj = None 
+canvas_tk_agg_obj = None
+# Widgets that need to be updated when the function name changes
+show_arrow_checkbox = None
+relations_label_widget = None
 
 def reverse_arrows_direction():
-    """Reverses the direction style of all arrows on the canvas and updates the function name display (f to f^-1 and vice-versa)."""
+    """Toggle all arrow directions and update the displayed function name."""
     if not config.current_fig:
         return
 
+    config.arrows_inverse = not config.arrows_inverse
+
     ax = config.current_fig.gca()
-    
-    # Determine current a and b, prefer stored config values, fallback to recalculation
+
+    # Position for the function name text
     a_temp, b_temp = config.current_a, config.current_b
     if a_temp is None or b_temp is None:
-        if domain_entry.get() and codomain_entry.get():
-            try:
-                max_elements = max(len(domain_entry.get().split(',')), len(codomain_entry.get().split(',')))
-                a_temp = (max_elements+1)/2
-                b_temp = a_temp / 2
-            except ValueError: # Handle cases where split might result in non-comparable if empty strings not handled by len
-                return
-        else:
-            return 
-    if a_temp is None or b_temp is None: return # Still None, cannot proceed
-
-    # Calculate positions for function name text (f or f^-1)
+        return
     mid_point_x = (0 + 0.5*b_temp + 3*b_temp - 0.5*b_temp) / 2
-    mid_point_y = a_temp + 0.07*b_temp # Slightly above the ellipses connecting arrow
+    mid_point_y = a_temp + 0.07*b_temp
 
-    new_func_text = r'$f$' # Default to f
-    target_arrow_style = '-|>' # Default to forward arrow
+    remove_functionName()
+    text = fr'${config.current_function_name}$'
+    style = '-|>'
+    if config.arrows_inverse:
+        text = fr'${config.current_function_name}^{{-1}}$'
+        style = '<|-'
 
-    # Check the style of the 'special_arrow' (main function arrow) to determine current state
-    # If not found, it might infer from other arrows, but this part is focused on the special_arrow.
-    special_arrow_found = False
-    for patch in ax.patches:
-        if isinstance(patch, patches.FancyArrowPatch) and patch.get_label() == "special_arrow":
-            special_arrow_found = True
-            # If current style is forward ('-|>' which is ArrowStyle.CurveFilledB's default or similar)
-            # then change to inverse. ArrowStyle objects don't directly expose their string representation easily.
-            # We rely on the visual outcome or a custom attribute if set.
-            # Assuming default FancyArrowPatch style is '->' or '-|>', then CurveFilledB is '<-' or '<|-'.
-            # This logic is a bit heuristic; robust ArrowStyle checking is complex.
-            # For simplicity, if it's not already '<|-', assume it's forward.
-            # A better way would be to store the current direction state in config.
-            current_style_str = str(patch.get_arrowstyle()) # This might not be the 'simple' style string.
-            if "<|-" in current_style_str or "Simple,tail_width=0.5,head_width=4,head_length=8" in current_style_str and patch.get_mutation_scale() == 15 : # Heuristic for inverse style
-                 # This check is very fragile. A more robust way: store current_arrow_direction in config.
-                 pass # Already inverse, target will be forward (default)
-            else: # Assumed forward, change to inverse
-                new_func_text = r'$f^{-1}$'
-                target_arrow_style = '<|-'
-            break 
-    
-    if not special_arrow_found and len(ax.patches) > 0: # Fallback if special_arrow not found
-         #This fallback is removed as it can lead to inconsistent behavior if special_arrow is deleted.
-         pass
+    config.function_text_artist = ax.text(mid_point_x, mid_point_y, text,
+                                          ha='center', va='bottom', fontsize=30,
+                                          color='black')
 
-    # Remove existing function name text before adding new one
-    remove_functionName() 
-    ax.text(mid_point_x, mid_point_y, new_func_text, ha='center', va='bottom', fontsize=30, color='black')
-
-    # Apply the new style to all arrows
+    # Update arrowstyle for all arrows
     for patch in ax.patches[:]:
         if isinstance(patch, patches.FancyArrowPatch):
-            patch.set_arrowstyle(target_arrow_style)
+            patch.set_arrowstyle(style)
 
-    if hasattr(config.current_fig, 'canvas'): config.current_fig.canvas.draw_idle()
+    refresh_canvas()
 
 
 def remove_arrows():
@@ -104,6 +76,40 @@ def toggle_arrow():
         # refresh_canvas() # Not strictly needed as remove_special_arrow/remove_functionName redraw
 
 
+def change_function_name():
+    """Prompt user for a new function name and update labels."""
+    old_name = config.current_function_name
+    new_name = simpledialog.askstring("Function name",
+                                      "Enter function name:",
+                                      initialvalue=old_name)
+    if new_name:
+        config.current_function_name = new_name.strip()
+        if show_arrow_checkbox:
+            show_arrow_checkbox.config(text=f"Show function Name ({config.current_function_name})")
+        if relations_label_widget:
+            relations_label_widget.config(
+                text=f"Relations (e.g. {config.current_function_name}(a)=1;{config.current_function_name}(b)=2):")
+
+        # Update existing relations in entry to use new name
+        cur_rel = relation_entry.get()
+        if cur_rel:
+            try:
+                import re
+                pattern = re.compile(re.escape(old_name) + r"\(")
+                cur_rel = pattern.sub(config.current_function_name + "(", cur_rel)
+                relation_entry.delete(0, tk.END)
+                relation_entry.insert(0, cur_rel)
+            except Exception:
+                pass
+
+        # Update displayed function name text if present
+        if config.function_text_artist:
+            txt = fr'${config.current_function_name}$'
+            if config.arrows_inverse:
+                txt = fr'${config.current_function_name}^{{-1}}$'
+            config.function_text_artist.set_text(txt)
+            refresh_canvas()
+
 def remove_special_arrow():
     """Removes the main function arrow (labeled 'special_arrow') from the canvas."""
     if not config.current_fig or config.current_a is None or config.current_b is None:
@@ -116,22 +122,13 @@ def remove_special_arrow():
 
 
 def remove_functionName():
-    """Removes the function name text (f or f^-1) associated with the main function arrow."""
-    if not config.current_fig or config.current_a is None or config.current_b is None:
-        return
-    ax = config.current_fig.gca()
-    a_temp, b_temp = config.current_a, config.current_b
-    # Calculate expected position of function name text
-    mid_point_x = (0 + 0.5*b_temp + 3*b_temp - 0.5*b_temp) / 2
-    mid_point_y = a_temp + 0.07*b_temp
-    
-    for artist in list(ax.texts): # Iterate over a copy
-        # Check text content and position to identify the function name
-        if artist.get_text() in [r'$f$', r'$f^{-1}$'] and \
-           abs(artist.get_position()[0] - mid_point_x) < 1e-3 and \
-           abs(artist.get_position()[1] - mid_point_y) < 1e-3:
-            artist.remove()
-    if hasattr(config.current_fig, 'canvas'): config.current_fig.canvas.draw_idle()
+    """Remove the function name text from the canvas if present."""
+    if config.function_text_artist is not None:
+        try:
+            config.function_text_artist.remove()
+        finally:
+            config.function_text_artist = None
+            refresh_canvas()
 
 
 def refresh_canvas():
@@ -163,9 +160,16 @@ def draw_with_arrow():
     remove_special_arrow() 
     remove_functionName()
 
-    arrow = FancyArrowPatch(start_point, end_point, mutation_scale=15, arrowstyle='-|>', color="black", label="special_arrow")
+    style = '<|-' if config.arrows_inverse else '-|>'
+    arrow = FancyArrowPatch(start_point, end_point, mutation_scale=15,
+                            arrowstyle=style, color="black", label="special_arrow")
     ax.add_patch(arrow)
-    ax.text(mid_point_x, mid_point_y, r'$f$', ha='center', va='bottom', fontsize=30, color='black') # Default to 'f'
+    text = fr'${config.current_function_name}$'
+    if config.arrows_inverse:
+        text = fr'${config.current_function_name}^{{-1}}$'
+    config.function_text_artist = ax.text(mid_point_x, mid_point_y, text,
+                                          ha='center', va='bottom', fontsize=30,
+                                          color='black')
     
     if hasattr(config.current_fig, 'canvas'): config.current_fig.canvas.draw_idle()
 
@@ -343,13 +347,15 @@ def on_canvas_click(event):
                 x2_arrow = x2_center - arrow_offset_x 
 
                 ax = config.current_fig.gca()
+                style = '<|-' if config.arrows_inverse else '-|>'
                 arrow = FancyArrowPatch((x1_arrow, y1_center), (x2_arrow, y2_center),
-                                        mutation_scale=15, arrowstyle='-|>', color="black", lw=1.0) # Thinner line
+                                        mutation_scale=15, arrowstyle=style, color="black", lw=1.0)
                 ax.add_patch(arrow) # Add the new arrow to the plot
                 refresh_canvas()
 
                 # Update the relation_entry text field with the new relation
-                new_relation_str = f"f({start_info['name']})={end_info['name']}"
+                fn = config.current_function_name
+                new_relation_str = f"{fn}({start_info['name']})={end_info['name']}"
                 current_relations = relation_entry.get()
                 if current_relations:
                     relation_entry.insert(tk.END, f";{new_relation_str}")
@@ -409,13 +415,15 @@ def on_value_finalized(event=None):
 def update_fontsize(new_size):
     """Callback for font size scale: updates font size in config and redraws."""
     config.current_fontsize = int(new_size)
-    if hasattr(config, 'current_fig') and config.current_fig: 
-        draw_only_ellipse() # Redraw with new font size
+    if hasattr(config, 'current_fig') and config.current_fig:
+        draw_only_ellipse()
+        draw_arrows()
 
 
 def initialize_gui():
     """Initializes the main Tkinter GUI window, frames, widgets, and event bindings."""
     global show_arrow_var, root, domain_entry, codomain_entry, relation_entry, right_frame
+    global show_arrow_checkbox, relations_label_widget
     # canvas_tk_agg_obj is handled by draw_only_ellipse
 
     root = tk.Tk()
@@ -470,20 +478,29 @@ def initialize_gui():
     left_frame.grid_columnconfigure(0, weight=0) # Label column for font size
     left_frame.grid_columnconfigure(1, weight=1) # Scale column for font size (expandable)
 
-    Label(left_frame, text="Relations (e.g. f(a)=1;f(b)=2):").grid(row=5, column=0, columnspan=2, pady=(10,0), sticky=tk.W)
+    global relations_label_widget, show_arrow_checkbox
+
+    relations_label_widget = Label(left_frame,
+        text=f"Relations (e.g. {config.current_function_name}(a)=1;{config.current_function_name}(b)=2):")
+    relations_label_widget.grid(row=5, column=0, columnspan=2, pady=(10,0), sticky=tk.W)
     relation_entry = Entry(left_frame, width=30)
     relation_entry.grid(row=6, column=0, columnspan=2, pady=2, sticky=tk.EW)
     relation_entry.bind('<Return>', draw_arrows_and_clear_entry)
 
     # --- Control Buttons and Checkboxes ---
-    show_arrow_checkbox = tk.Checkbutton(left_frame, text="Show function Name (f)", variable=show_arrow_var, command=toggle_arrow)
+    show_arrow_checkbox = tk.Checkbutton(left_frame,
+                                         text=f"Show function Name ({config.current_function_name})",
+                                         variable=show_arrow_var, command=toggle_arrow)
     show_arrow_checkbox.grid(row=7, column=0, columnspan=2, pady=(10,0), sticky=tk.W)
-    
+
     inverse_button = tk.Button(left_frame, text="Inverse Arrows & Function Name", command=reverse_arrows_direction)
     inverse_button.grid(row=8, column=0, columnspan=2, pady=5, sticky=tk.EW)
-    
+
+    change_name_button = tk.Button(left_frame, text="Change Function Name", command=change_function_name)
+    change_name_button.grid(row=9, column=0, columnspan=2, pady=5, sticky=tk.EW)
+
     remove_arrows_button = tk.Button(left_frame, text="Remove Relation Arrows", command=remove_arrows)
-    remove_arrows_button.grid(row=9, column=0, columnspan=2, pady=5, sticky=tk.EW)
+    remove_arrows_button.grid(row=10, column=0, columnspan=2, pady=5, sticky=tk.EW)
     
     # Spacer (using pady in buttons above/below achieves similar)
     # Label(left_frame, text="").grid(row=10, column=0, columnspan=2) 
