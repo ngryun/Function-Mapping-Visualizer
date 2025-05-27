@@ -28,9 +28,11 @@ def draw_arrow(ax, domain_elements, codomain_elements, relation, x_offset_domain
                 start_y = y_values_domain[domain_elements.index(start_element)]
                 end_y = y_values_codomain[codomain_elements.index(end_element)]
                 
-                x2 = x_offset_codomain - + 0.2 * (a/2)
+                # Offset arrow endpoints slightly so they do not start/end
+                # exactly at the centre of the text labels.
+                x2 = x_offset_codomain - 0.2 * (a / 2)
                 y2 = end_y
-                x1 = x_offset_domain + 0.2 * (a/2)
+                x1 = x_offset_domain + 0.2 * (a / 2)
                 y1 = start_y
                 
                 arrow = FancyArrowPatch((x1, y1), (x2, y2), mutation_scale=15, arrowstyle='-|>', color="black")

@@ -12,3 +12,7 @@ arrow_start_point = None
 # Used for click detection within ellipses and for scaling arrow offsets.
 current_a = None  # Semi-major axis (height for the ellipses)
 current_b = None  # Semi-minor axis (width for the ellipses)
+
+# Matplotlib figure object currently being displayed.  Many GUI functions rely on
+# this reference when redrawing or saving the canvas.
+current_fig = None
