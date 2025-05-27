@@ -258,7 +258,9 @@ def get_closest_element_in_ellipse(x_click, y_click, elements, elements_x_offset
         return None
     
     y_coords_of_elements = get_y_values(elements, a) # Get y-positions of elements from graphics.py
-    if not y_coords_of_elements: return None # Should not happen if elements is not empty, but good check
+    # y_coords_of_elements is a numpy array; avoid ambiguous truth value check
+    if len(y_coords_of_elements) == 0:
+        return None  # Should not happen if elements is not empty, but good check
 
     min_dist_sq = float('inf') # Use squared distance to avoid sqrt until necessary
     found_element_info = None
