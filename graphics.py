@@ -45,9 +45,22 @@ def draw_arrow(ax, domain_elements, codomain_elements, relation, x_offset_domain
             except ValueError:
                 pass  # If input relation doesn't match domain or codomain, we'll skip drawing the arrow for that relation
 
+def _is_ascii(text):
+    """Return True if all characters in text are ASCII."""
+    try:
+        text.encode('ascii')
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def draw_elements(ax, elements, y_values, x_offset=0):
     for i, element in enumerate(elements):
-        ax.text(x_offset, y_values[i], r'${}$'.format(element), ha='center', va='center', fontsize=config.current_fontsize)
+        if _is_ascii(element):
+            txt = r'${}$'.format(element)
+        else:
+            txt = element
+        ax.text(x_offset, y_values[i], txt, ha='center', va='center', fontsize=config.current_fontsize)
 def draw_ellipse(domain_elements, codomain_elements):
     max_elements = max(len(domain_elements), len(codomain_elements))
     a = (max_elements+1)/2
