@@ -2,7 +2,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import re
 from matplotlib.patches import FancyArrowPatch
+import matplotlib.font_manager as fm
 import config
+
+# Configure a font that supports Hangul characters if available.  This helps
+# avoid warnings like "Glyph xxxx missing from current font" when users enter
+# Korean text for domain or codomain elements.
+_font_candidates = ["AppleGothic", "Malgun Gothic", "NanumGothic", "DejaVu Sans"]
+_available_fonts = {f.name for f in fm.fontManager.ttflist}
+for _font in _font_candidates:
+    if _font in _available_fonts:
+        plt.rcParams["font.family"] = _font
+        break
 
 
 def get_y_values(elements, a):
