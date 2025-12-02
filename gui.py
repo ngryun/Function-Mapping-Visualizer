@@ -442,8 +442,20 @@ def draw_arrows_and_clear_entry(event=None):
     if root: root.after(100, lambda: relation_entry.focus_set()) # Keep focus on the entry
 
 
-def on_value_finalized(event=None): 
+def on_value_finalized(event=None):
     """Callback for domain/codomain entry changes: redraws the ellipses."""
+    # Update config with new domain and codomain names
+    try:
+        if 'domain_name_entry' in globals() and domain_name_entry:
+            name = domain_name_entry.get().strip()
+            if name:
+                config.domain_name = name
+        if 'codomain_name_entry' in globals() and codomain_name_entry:
+            name = codomain_name_entry.get().strip()
+            if name:
+                config.codomain_name = name
+    except:
+        pass
     draw_only_ellipse()
 
 
@@ -458,7 +470,7 @@ def update_fontsize(new_size):
 def initialize_gui():
     """Initializes the main Tkinter GUI window, frames, widgets, and event bindings."""
     global show_arrow_var, root, domain_entry, codomain_entry, relation_entry, right_frame
-    global show_arrow_checkbox, relations_label_widget
+    global show_arrow_checkbox, relations_label_widget, domain_name_entry, codomain_name_entry
     # canvas_tk_agg_obj is handled by draw_only_ellipse
 
     root = tk.Tk()
@@ -492,59 +504,74 @@ def initialize_gui():
     bottom_frame.pack(side=tk.BOTTOM, pady=5, fill=tk.X)
 
     # --- Input Widgets in left_frame ---
-    Label(left_frame, text="Domain (e.g. a,b,c):").grid(row=0, column=0, columnspan=2, pady=(5,0), sticky=tk.W)
-    domain_entry = Entry(left_frame, width=30) # Increased width slightly
-    domain_entry.grid(row=1, column=0, columnspan=2, pady=2, sticky=tk.EW)
+    # Domain Name and Elements
+    Label(left_frame, text="Domain Name:").grid(row=0, column=0, pady=(5,0), sticky=tk.W, padx=(0,5))
+    domain_name_entry = Entry(left_frame, width=5)
+    domain_name_entry.grid(row=0, column=1, pady=(5,0), sticky=tk.W)
+    domain_name_entry.insert(0, config.domain_name)
+    domain_name_entry.bind("<Return>", on_value_finalized)
+    domain_name_entry.bind("<FocusOut>", on_value_finalized)
+
+    Label(left_frame, text="Domain:").grid(row=0, column=2, pady=(5,0), sticky=tk.W, padx=(10,5))
+    domain_entry = Entry(left_frame, width=18)
+    domain_entry.grid(row=0, column=3, pady=(5,0), sticky=tk.EW)
     domain_entry.bind("<Return>", on_value_finalized)
     domain_entry.bind("<FocusOut>", on_value_finalized)
 
-    Label(left_frame, text="Codomain (e.g. x,y,z):").grid(row=2, column=0, columnspan=2, pady=(5,0), sticky=tk.W)
-    codomain_entry = Entry(left_frame, width=30)
-    codomain_entry.grid(row=3, column=0, columnspan=2, pady=2, sticky=tk.EW)
+    # Codomain Name and Elements
+    Label(left_frame, text="Codomain Name:").grid(row=1, column=0, pady=(5,0), sticky=tk.W, padx=(0,5))
+    codomain_name_entry = Entry(left_frame, width=5)
+    codomain_name_entry.grid(row=1, column=1, pady=(5,0), sticky=tk.W)
+    codomain_name_entry.insert(0, config.codomain_name)
+    codomain_name_entry.bind("<Return>", on_value_finalized)
+    codomain_name_entry.bind("<FocusOut>", on_value_finalized)
+
+    Label(left_frame, text="Codomain:").grid(row=1, column=2, pady=(5,0), sticky=tk.W, padx=(10,5))
+    codomain_entry = Entry(left_frame, width=18)
+    codomain_entry.grid(row=1, column=3, pady=(5,0), sticky=tk.EW)
     codomain_entry.bind("<Return>", on_value_finalized)
     codomain_entry.bind("<FocusOut>", on_value_finalized)
 
     # Fontsize Scale
-    Label(left_frame, text="Font Size:").grid(row=4, column=0, pady=(10,0), sticky=tk.W)
+    Label(left_frame, text="Font Size:").grid(row=2, column=0, pady=(10,0), sticky=tk.W)
     fontsize_scale = tk.Scale(left_frame, from_=10, to=40, orient=tk.HORIZONTAL, command=update_fontsize)
-    fontsize_scale.set(config.current_fontsize) 
-    fontsize_scale.grid(row=4, column=1, pady=(10,0), sticky=tk.EW)
-    
-    left_frame.grid_columnconfigure(0, weight=0) # Label column for font size
-    left_frame.grid_columnconfigure(1, weight=1) # Scale column for font size (expandable)
+    fontsize_scale.set(config.current_fontsize)
+    fontsize_scale.grid(row=2, column=1, columnspan=3, pady=(10,0), sticky=tk.EW)
+
+    left_frame.grid_columnconfigure(3, weight=1) # Domain/Codomain elements column (expandable)
 
     global relations_label_widget, show_arrow_checkbox
 
     relations_label_widget = Label(left_frame,
         text=f"Relations (e.g. {config.current_function_name}(a)=1;{config.current_function_name}(b)=2):")
-    relations_label_widget.grid(row=5, column=0, columnspan=2, pady=(10,0), sticky=tk.W)
+    relations_label_widget.grid(row=3, column=0, columnspan=4, pady=(10,0), sticky=tk.W)
     relation_entry = Entry(left_frame, width=30)
-    relation_entry.grid(row=6, column=0, columnspan=2, pady=2, sticky=tk.EW)
+    relation_entry.grid(row=4, column=0, columnspan=4, pady=2, sticky=tk.EW)
     relation_entry.bind('<Return>', draw_arrows_and_clear_entry)
 
     # --- Control Buttons and Checkboxes ---
     show_arrow_checkbox = tk.Checkbutton(left_frame,
                                          text=f"Show function Name ({config.current_function_name})",
                                          variable=show_arrow_var, command=toggle_arrow)
-    show_arrow_checkbox.grid(row=7, column=0, columnspan=2, pady=(10,0), sticky=tk.W)
+    show_arrow_checkbox.grid(row=5, column=0, columnspan=4, pady=(10,0), sticky=tk.W)
 
     inverse_button = tk.Button(left_frame, text="Inverse Arrows & Function Name", command=reverse_arrows_direction)
-    inverse_button.grid(row=8, column=0, columnspan=2, pady=5, sticky=tk.EW)
+    inverse_button.grid(row=6, column=0, columnspan=4, pady=5, sticky=tk.EW)
 
     change_name_button = tk.Button(left_frame, text="Change Function Name", command=change_function_name)
-    change_name_button.grid(row=9, column=0, columnspan=2, pady=5, sticky=tk.EW)
+    change_name_button.grid(row=7, column=0, columnspan=4, pady=5, sticky=tk.EW)
 
     remove_arrows_button = tk.Button(left_frame, text="Remove Relation Arrows", command=remove_arrows)
-    remove_arrows_button.grid(row=10, column=0, columnspan=2, pady=5, sticky=tk.EW)
-    
+    remove_arrows_button.grid(row=8, column=0, columnspan=4, pady=5, sticky=tk.EW)
+
     # Spacer (using pady in buttons above/below achieves similar)
-    # Label(left_frame, text="").grid(row=10, column=0, columnspan=2) 
+    # Label(left_frame, text="").grid(row=10, column=0, columnspan=4)
 
     clip_button = tk.Button(left_frame, text="Copy to Clipboard", command=copy_to_clipboard, bg="#87CEEB")
-    clip_button.grid(row=11, column=0, columnspan=2, pady=(15,5), sticky=tk.EW) # Added more top padding
+    clip_button.grid(row=9, column=0, columnspan=4, pady=(15,5), sticky=tk.EW) # Added more top padding
 
     save_button = tk.Button(left_frame, text="Save as Image", command=save_as_image, bg="#98FB98")
-    save_button.grid(row=12, column=0, columnspan=2, pady=5, sticky=tk.EW)
+    save_button.grid(row=10, column=0, columnspan=4, pady=5, sticky=tk.EW)
     
     # --- Bottom Frame Content (Credits) ---
     creator_label = tk.Label(bottom_frame, text="Made by Namgung Yeon @Sokcho 2023.10.6", font=("Arial", 10), fg="gray")

@@ -4,6 +4,10 @@ current_fontsize = 27
 # Name of the function currently displayed (default 'f').
 current_function_name = 'f'
 
+# Names for domain and codomain sets (default 'X' and 'Y')
+domain_name = 'X'
+codomain_name = 'Y'
+
 # Whether arrows are currently shown in inverse direction.
 arrows_inverse = False
 

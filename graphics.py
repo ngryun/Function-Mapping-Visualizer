@@ -95,9 +95,13 @@ def draw_ellipse(domain_elements, codomain_elements):
     ax.plot(x + 3*b, y, color='black')
     draw_elements(ax, codomain_elements, y_values_codomain, 3*b)
 
-    ax.text(0, a, r'$X$', ha='center', va='center', fontsize=30, 
+    # Display domain and codomain names from config
+    domain_text = fr'${config.domain_name}$' if _is_ascii(config.domain_name) else config.domain_name
+    codomain_text = fr'${config.codomain_name}$' if _is_ascii(config.codomain_name) else config.codomain_name
+
+    ax.text(0, a, domain_text, ha='center', va='center', fontsize=30,
         bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.5'))
-    ax.text(3*b, a, r'$Y$', ha='center', va='center', fontsize=30, 
+    ax.text(3*b, a, codomain_text, ha='center', va='center', fontsize=30,
         bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.5'))
     
     ax.set_xlim([-b, 4 * b])  # 조금의 여백을 위해 -1과 +1을 추가
